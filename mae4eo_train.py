@@ -1,5 +1,7 @@
 import argparse
+import platform
 
+from matplotlib import pyplot as plt
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 
 import wandb as wandb
@@ -94,6 +96,46 @@ def wandb_config(epochs, model_name, batch_size, learning_rate):
       "batch_size": batch_size,
       "model_name":model_name,
     }
+def visualize_output(model, test_image):
+    test_augmented_images = model.test_augmentation_model(test_image)
+    test_patches = model.patch_layer(test_augmented_images)
+    (
+        test_unmasked_embeddings,
+        test_masked_embeddings,
+        test_unmasked_positions,
+        test_mask_indices,
+        test_unmask_indices,
+    ) = model.patch_encoder(test_patches)
+    test_encoder_outputs = model.encoder(test_unmasked_embeddings)
+    test_encoder_outputs = test_encoder_outputs + test_unmasked_positions
+    test_decoder_inputs = tf.concat(
+        [test_encoder_outputs, test_masked_embeddings], axis=1
+    )
+    test_decoder_outputs = model.decoder(test_decoder_inputs)
+
+    # Show a maksed patch image.
+    test_masked_patch, idx = model.patch_encoder.generate_masked_image(
+        test_patches, test_unmask_indices
+    )
+    print(f"\nIdx chosen: {idx}")
+    original_image = test_augmented_images[idx]
+    masked_image = model.patch_layer.reconstruct_from_patch(
+        test_masked_patch
+    )
+    reconstructed_image = test_decoder_outputs[idx]
+
+    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
+    ax[0].imshow(original_image)
+    ax[0].set_title(f"Original:")
+
+    ax[1].imshow(masked_image)
+    ax[1].set_title(f"Masked:")
+
+    ax[2].imshow(reconstructed_image)
+    ax[2].set_title(f"Resonstructed:")
+
+    plt.show()
+    plt.close()
 
 if __name__ == '__main__':
     # Setting seeds for reproducibility.
@@ -111,15 +153,15 @@ if __name__ == '__main__':
     # DATA
     BUFFER_SIZE = 1024
     BATCH_SIZE = batch_size
-    INPUT_SHAPE = (32, 32, 3)
+    INPUT_SHAPE = (None, 32, 32, 3)
     NUM_CLASSES = 10
 
     # OPTIMIZER
     LEARNING_RATE = learning_rate
-    WEIGHT_DECAY = 1e-4
+    WEIGHT_DECAY = 1e-46
 
     # PRETRAINING
-    EPOCHS = 100
+    EPOCHS = 1
 
     # AUGMENTATION
     IMAGE_SIZE = 48  # We will resize input images to this size.
@@ -147,20 +189,22 @@ if __name__ == '__main__':
     ]
     if training == 'train':
         wandb_config(epochs=EPOCHS, model_name='mae4eo', batch_size=BATCH_SIZE, learning_rate=LEARNING_RATE)
-
-    train_ds, val_ds, test_ds, len_train, len_test = load_data(BATCH_SIZE, BUFFER_SIZE)
+    if platform.system() == 'Darwin':
+        train_ds, val_ds, test_ds, len_train, len_test = load_data(BATCH_SIZE, BUFFER_SIZE, mode='test')
+    else:
+        train_ds, val_ds, test_ds, len_train, len_test = load_data(BATCH_SIZE, BUFFER_SIZE, mode='train')
     train_augmentation_model = get_train_augmentation_model(image_size=IMAGE_SIZE, input_shape=INPUT_SHAPE)
     test_augmentation_model = get_test_augmentation_model(image_size=IMAGE_SIZE)
-    test_augmentation_model.build(input_shape=(None, 32, 32, 3))
+
+    train_augmentation_model.build(input_shape=INPUT_SHAPE)
+    test_augmentation_model.build(input_shape=INPUT_SHAPE)
+
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
     patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION)
     encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
                              encoder_transformer_units=ENC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
     decoder = create_decoder(num_pathces=NUM_PATCHES, image_size=IMAGE_SIZE, num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
                              decoder_projection_dim=DEC_PROJECTION_DIM, decoder_transformer_units=DEC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
-    if training != 'train':
-        encoder=tf.keras.models.load_model('mae4eo/encoder_batchsize'+str(batch_size)+'_lr_'+str(learning_rate))
-        decoder=tf.keras.models.load_model('mae4eo/decoder_batchsize' + str(batch_size) + '_lr_' + str(learning_rate))
     mae_model = MaskedAutoencoder(
         train_augmentation_model=train_augmentation_model,
         test_augmentation_model=test_augmentation_model,
@@ -169,6 +213,7 @@ if __name__ == '__main__':
         encoder=encoder,
         decoder=decoder,
     )
+    mae_model.compute_output_shape(input_shape=INPUT_SHAPE)
     total_steps = int((len_train / BATCH_SIZE) * EPOCHS)
     warmup_epoch_percentage = 0.15
     warmup_steps = int(total_steps * warmup_epoch_percentage)
@@ -187,10 +232,12 @@ if __name__ == '__main__':
         history = mae_model.fit(
             train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=[WandbCallback(save_model=False)],
         )
-        encoder.save('mae4eo/encoder_batchsize'+str(batch_size)+'_lr_'+str(learning_rate))
-        decoder.save('mae4eo/decoder_batchsize' + str(batch_size) + '_lr_' + str(learning_rate))
-
+        mae_model.save('mae4eo/mae4eo_batchsize'+str(batch_size)+'_lr_'+str(learning_rate))
+    else:
+        mae_model.load_weights('mae4eo/mae4eo_batchsize'+str(batch_size)+'_lr_'+str(learning_rate))
+    #
     # Measure its performance.
     loss, mae = mae_model.evaluate(test_ds)
     print(f"Loss: {loss:.2f}")
     print(f"MAE: {mae:.2f}")
+    visualize_output(mae_model, next(iter(test_ds)))

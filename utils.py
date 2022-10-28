@@ -1,3 +1,5 @@
+import os
+
 import tensorflow as tf
 from tensorflow.keras import layers
 
@@ -5,7 +7,7 @@ def get_train_augmentation_model(input_shape, image_size):
     model = tf.keras.Sequential(
         [
             layers.Rescaling(1 / 255.0),
-            layers.Resizing(input_shape[0] + 20, input_shape[0] + 20),
+            layers.Resizing(input_shape[1] + 20, input_shape[1] + 20),
             layers.RandomCrop(image_size, image_size),
             layers.RandomFlip("horizontal"),
         ],
@@ -21,12 +23,18 @@ def get_test_augmentation_model(image_size):
     )
     return model
 
-def load_data(batch_size, buffer_size, dataset='cifar10'):
+def load_data(batch_size, buffer_size, dataset='cifar10', mode='train'):
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
-    (x_train, y_train), (x_val, y_val) = (
-        (x_train[:40000], y_train[:40000]),
-        (x_train[40000:], y_train[40000:]),
-    )
+    if mode=='train':
+        (x_train, y_train), (x_val, y_val) = (
+            (x_train[:40000], y_train[:40000]),
+            (x_train[40000:], y_train[40000:]),
+        )
+    else:
+        (x_train, y_train), (x_val, y_val) = (
+            (x_train[:400], y_train[:400]),
+            (x_train[400:800], y_train[400:800]),
+        )
     print(f"Training samples: {len(x_train)}")
     print(f"Validation samples: {len(x_val)}")
     print(f"Testing samples: {len(x_test)}")
