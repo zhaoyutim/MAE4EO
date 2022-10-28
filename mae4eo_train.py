@@ -145,10 +145,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('-b', type=int, help='batch size')
     parser.add_argument('-lr', type=float, help='learning rate')
+    parser.add_argument('-mp', type=float, help='masked proportion')
     parser.add_argument('-t', type=str, help='training or testing')
     args = parser.parse_args()
     batch_size = args.b
     learning_rate = args.lr
+    mask_proportion = args.mp
     training = args.t
     # DATA
     BUFFER_SIZE = 1024
@@ -167,7 +169,7 @@ if __name__ == '__main__':
     IMAGE_SIZE = 48  # We will resize input images to this size.
     PATCH_SIZE = 6  # Size of the patches to be extracted from the input images.
     NUM_PATCHES = (IMAGE_SIZE // PATCH_SIZE) ** 2
-    MASK_PROPORTION = 0.75  # We have found 75% masking to give us the best results.
+    MASK_PROPORTION = mask_proportion  # We have found 75% masking to give us the best results.
 
     # ENCODER and DECODER
     LAYER_NORM_EPS = 1e-6
@@ -232,9 +234,9 @@ if __name__ == '__main__':
         history = mae_model.fit(
             train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=[WandbCallback(save_model=False)],
         )
-        mae_model.save('mae4eo/mae4eo_batchsize'+str(batch_size)+'_lr_'+str(learning_rate))
+        mae_model.save('mae4eo/mae4eo_batchsize'+str(batch_size)+'_lr_'+str(learning_rate)+'_mask_'+str(mask_proportion))
     else:
-        mae_model.load_weights('mae4eo/mae4eo_batchsize'+str(batch_size)+'_lr_'+str(learning_rate))
+        mae_model.load_weights('mae4eo/mae4eo_batchsize'+str(batch_size)+'_lr_'+str(learning_rate)+'_mask_'+str(mask_proportion))
     #
     # Measure its performance.
     loss, mae = mae_model.evaluate(test_ds)
