@@ -24,7 +24,8 @@ def get_test_augmentation_model(image_size):
     return model
 
 def load_data(batch_size, buffer_size, dataset='cifar10', mode='train'):
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+    if dataset=='cifar10':
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
     if mode=='train':
         (x_train, y_train), (x_val, y_val) = (
             (x_train[:40000], y_train[:40000]),
