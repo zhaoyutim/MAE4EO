@@ -1,10 +1,25 @@
 vit_large:
   layer_norm_eps: 1.0e-6
   # Encoder Config
+  enc_projection_dim: 768
+  enc_num_heads: 12
+  enc_layers: 12
+  enc_mlp_ratio: 4
+  # Decoder Config
+  dec_projection_dim: 512
+  dec_num_heads: 16
+  dec_layers: 8
+  dec_mlp_ratio: 4
+
+vit:
+  layer_norm_eps: 1.0e-6
+  # Encoder Config
   enc_projection_dim: 128
   enc_num_heads: 4
   enc_layers: 6
+  enc_mlp_ratio: 2
   # Decoder Config
   dec_projection_dim: 64
   dec_num_heads: 4
   dec_layers: 2
+  dec_mlp_ratio: 2

@@ -1,0 +1,7 @@
+__pycache__
+.idea
+logs
+mae4eo
+venv
+wandb
+._.DS_Store

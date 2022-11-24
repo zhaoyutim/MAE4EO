@@ -51,7 +51,7 @@ class WarmUpCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
             step > self.total_steps, 0.0, learning_rate, name="learning_rate"
         )
 if __name__=='__main__':
-    total_steps = int((40000 / 256) * 100)
+    total_steps = int((40000 / 256) * 30)
     warmup_epoch_percentage = 0.15
     warmup_steps = int(total_steps * warmup_epoch_percentage)
     scheduled_lrs = WarmUpCosine(

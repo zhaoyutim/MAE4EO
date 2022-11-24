@@ -6,3 +6,14 @@ cifar10:
   n_channel: 3
   aug_img_size: 48
   patch_size: 6
+  learning_rate: 0.005
+
+imagenet:
+  buffer_size: 1024
+  batch_size: 256
+  img_shape: 224
+  num_classes: 1000
+  n_channel: 3
+  aug_img_size: 224
+  patch_size: 16
+  learning_rate: 0.00015

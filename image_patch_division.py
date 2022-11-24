@@ -1,9 +1,11 @@
+import os
+
 import numpy as np
 from matplotlib import pyplot as plt
 from tensorflow.keras import layers
 import tensorflow as tf
 
-from utils import get_train_augmentation_model, load_data
+from utils import ImagenetLoader
 
 
 class ImagePatchDivision(layers.Layer):
@@ -52,14 +54,14 @@ class ImagePatchDivision(layers.Layer):
         return reconstructed
 
 if __name__=='__main__':
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
     PATCH_SIZE = 6
-    train_ds, val_ds, test_ds, len_train, len_test = load_data(batch_size=256, buffer_size=1024)
-    image_batch = next(iter(train_ds))
-    augmentation_model = get_train_augmentation_model(image_size=48, input_shape=(32, 32, 3))
-    augmented_images = augmentation_model(image_batch)
+    imagenet = ImagenetLoader(dataset='cifar')
+    image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='cifar', batch_size=256, augment=True)
+    image_batch = next(iter(image_gen)).numpy()
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
-    patches = patch_layer(images=augmented_images)
-    random_index = patch_layer.show_patched_image(images=augmented_images, patches=patches)
+    patches = patch_layer(images=image_batch)
+    random_index = patch_layer.show_patched_image(images=image_batch, patches=patches)
     image = patch_layer.reconstruct_from_patch(patches[random_index])
     plt.imshow(image)
     plt.axis("off")
