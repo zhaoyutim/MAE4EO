@@ -37,7 +37,7 @@ class MaskedAutoencoder(tf.keras.Model):
             mask_indices,
             unmask_indices,
             mask_restore
-        ) = self.patch_encoder(patches)
+        ) = self.patch_encoder(images)
 
         # Pass the unmaksed patche to the encoder.
         encoder_outputs = self.encoder(unmasked_embeddings)
@@ -95,14 +95,6 @@ class MaskedAutoencoder(tf.keras.Model):
         return {m.name: m.result() for m in self.metrics}
 
     def call(self, inputs, training=False):
-        # Augment the input images.
-        if training:
-            augmented_images = inputs
-        else:
-            augmented_images = inputs
-
-        # Patch the augmented images.
-        patches = self.patch_layer(augmented_images)
 
         # Encode the patches.
         (
@@ -112,7 +104,7 @@ class MaskedAutoencoder(tf.keras.Model):
             mask_indices,
             unmask_indices,
             mask_restore,
-        ) = self.patch_encoder(patches)
+        ) = self.patch_encoder(inputs)
 
         # Pass the unmaksed patche to the encoder.
         encoder_outputs = self.encoder(unmasked_embeddings)
@@ -207,7 +199,7 @@ if __name__=='__main__':
 
     with open("model_config.yml", "r", encoding="utf8") as f:
         model_config = yaml.load(f, Loader=yaml.FullLoader)
-    dataset='imagenet'
+    dataset='cifar10'
     BUFFER_SIZE, \
     BATCH_SIZE, \
     IMG_SHAPE, \
@@ -232,7 +224,7 @@ if __name__=='__main__':
     DEC_PROJECTION_DIM, \
     DEC_NUM_HEADS, \
     DEC_LAYERS,\
-    DEC_MLP_RATIO = model_config.get('vit_large').values()
+    DEC_MLP_RATIO = model_config.get('vit').values()
 
     ENC_TRANSFORMER_UNITS = [
         ENC_PROJECTION_DIM * ENC_MLP_RATIO,
@@ -243,13 +235,13 @@ if __name__=='__main__':
         DEC_PROJECTION_DIM
     ]
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
-    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION)
+    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION, patch_division=patch_layer)
     encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
                              encoder_transformer_units=ENC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
 
     # encoder.compute_output_shape(input_shape=INPUT_SHAPE)
 
-    decoder = create_decoder(num_pathces=NUM_PATCHES, num_heads=ENC_NUM_HEADS, image_size=IMAGE_SIZE, patch_size=PATCH_SIZE, num_layers=ENC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
+    decoder = create_decoder(num_pathces=NUM_PATCHES, num_heads=DEC_NUM_HEADS, image_size=IMAGE_SIZE, patch_size=PATCH_SIZE, num_layers=DEC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
                              decoder_projection_dim=DEC_PROJECTION_DIM, decoder_transformer_units=DEC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
 
     mae_model = MaskedAutoencoder(

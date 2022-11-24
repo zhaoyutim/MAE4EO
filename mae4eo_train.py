@@ -142,16 +142,21 @@ if __name__ == '__main__':
     strategy = tf.distribute.MirroredStrategy()
     with strategy.scope():
         patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
-        patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION)
-        encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
+        patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM,
+                                     mask_proportion=MASK_PROPORTION, patch_division=patch_layer)
+        encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS,
+                                 encoder_projection_dim=ENC_PROJECTION_DIM,
                                  encoder_transformer_units=ENC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
-        decoder = create_decoder(num_pathces=NUM_PATCHES, image_size=IMAGE_SIZE, patch_size=PATCH_SIZE, num_heads=ENC_NUM_HEADS, num_layers=DEC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
-                                 decoder_projection_dim=DEC_PROJECTION_DIM, decoder_transformer_units=DEC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
+        decoder = create_decoder(num_pathces=NUM_PATCHES, num_heads=DEC_NUM_HEADS, image_size=IMAGE_SIZE,
+                                 patch_size=PATCH_SIZE, num_layers=DEC_LAYERS,
+                                 encoder_projection_dim=ENC_PROJECTION_DIM,
+                                 decoder_projection_dim=DEC_PROJECTION_DIM,
+                                 decoder_transformer_units=DEC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
         mae_model = MaskedAutoencoder(
             patch_layer=patch_layer,
             patch_encoder=patch_encoder,
             encoder=encoder,
-            decoder=decoder,
+            decoder=decoder
         )
         mae_model.compute_output_shape(input_shape=INPUT_SHAPE)
         total_steps = int((imagenet.len_train / BATCH_SIZE) * EPOCHS)

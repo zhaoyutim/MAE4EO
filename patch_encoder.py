@@ -31,11 +31,11 @@ class PatchEncoder(layers.Layer):
         self.mask_token = tf.Variable(
             tf.random.normal([1, patch_size * patch_size * 3]), trainable=True
         )
-        self.projection_cnn = layers.Conv2D(units=self.projection_dim, kernel_size=patch_size, strides=patch_size)
+        self.projection_cnn = layers.Conv2D(filters=self.projection_dim, kernel_size=patch_size, strides=patch_size)
 
     def build(self, input_shape):
-        (_, self.num_patches, self.patch_area) = input_shape
 
+        self.num_patches = (input_shape[1]//self.patch_size) ** 2
         # Create the projection layer for the patches.
         self.projection = layers.Dense(units=self.projection_dim)
 
@@ -49,8 +49,8 @@ class PatchEncoder(layers.Layer):
 
     def call(self, images):
         # Get the positional embeddings.
-        patches = patch_layer(images=image_batch)
-        batch_size = tf.shape(image_batch)[0]
+
+        batch_size = tf.shape(images)[0]
 
         positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
         pos_embeddings = self.position_embedding(positions[tf.newaxis, ...])
@@ -61,9 +61,10 @@ class PatchEncoder(layers.Layer):
         # Embed the patches.
         # patch_embeddings = (self.projection(patches) + pos_embeddings)  # (B, num_patches, projection_dim)
         cls_tokens = tf.tile(self.cls_token, [batch_size, 1, 1])
-        patch_embeddings = self.projection_cnn(image_batch)
-        patch_embeddings = patch_embeddings.flatten(2), transpose(1,2)
-        patch_embeddings = tf.concat([cls_tokens, self.projection(patches)], 1)
+        patch_embeddings = self.projection_cnn(images)
+        # patches = self.patch_layer(images=images)
+        patch_embeddings = tf.reshape(patch_embeddings, [-1, self.num_patches, self.projection_dim])
+        patch_embeddings = tf.concat([cls_tokens, patch_embeddings], 1)
         patch_embeddings = (patch_embeddings + pos_embeddings)  # (B, num_patches, projection_dim)
         if self.downstream:
             return patch_embeddings
@@ -135,8 +136,8 @@ if __name__=='__main__':
     image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='cifar', batch_size=256, augment=True)
     image_batch = next(iter(image_gen)).numpy()
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
-    # patches = patch_layer(images=image_batch)
-    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=108, mask_proportion=0.75, patch_division=patch_layer)
+    patches = patch_layer(images=image_batch)
+    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=128, mask_proportion=0.75, patch_division=patch_layer)
     (unmasked_embeddings,masked_embeddings,unmasked_positions,mask_indices,unmask_indices,mask_restore) = patch_encoder(images=image_batch)
 
     # Show a maksed patch image.
