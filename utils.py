@@ -23,7 +23,7 @@ class ImagenetLoader:
             }
             self.x_train, self.x_val, self.x_test = tfds.load('imagenet2012',
                                        data_dir=os.path.join(write_dir, 'data'),
-                                       split=['train[:20%]', 'validation', 'test'],
+                                       split=['train', 'validation', 'test'],
                                         shuffle_files=True,
                                         download=True,
                                         as_supervised=True,
@@ -154,8 +154,8 @@ class ImagenetLoader:
 #             if (count % batch_size == 0):
 #                 yield images
 if __name__ == '__main__':
-    imagenet = ImagenetLoader('cifar')
-    image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='cifar',batch_size=256, augment=True)
+    imagenet = ImagenetLoader('imagenet')
+    image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='imagenet',batch_size=256, augment=True)
     image_batch = next(iter(val_gen)).numpy()
     print(image_batch)
     plt.imshow(image_batch[0,:,:,:])

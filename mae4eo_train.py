@@ -16,9 +16,14 @@ from image_patch_division import ImagePatchDivision
 from model import MaskedAutoencoder, create_encoder, create_decoder
 from patch_encoder import PatchEncoder
 from utils import ImagenetLoader
+import tensorflow.python.keras.backend as K
 
+# from tensorflow.keras import mixed_precision
+#
+# policy = mixed_precision.Policy('mixed_float16')
+# mixed_precision.set_global_policy(policy)
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 def wandb_config(epochs, model_name, batch_size, learning_rate):
     wandb.login()
     wandb.init(project='mae4eo', entity="zhaoyutim")
@@ -29,7 +34,7 @@ def wandb_config(epochs, model_name, batch_size, learning_rate):
       "batch_size": batch_size,
       "model_name":model_name,
     }
-def visualize_output(model, test_image):
+def visualize_output(model, test_image, patch_encoder):
     test_patches = model.patch_layer(test_image)
 
     (   test_unmasked_embeddings,
@@ -38,7 +43,7 @@ def visualize_output(model, test_image):
         test_mask_indices,
         test_unmask_indices,
         test_mask_restore
-    ) = model.patch_encoder(test_patches)
+    ) = model.patch_encoder(test_image)
 
     test_encoder_outputs = model.encoder(test_unmasked_embeddings)
     test_encoder_outputs = test_encoder_outputs + test_unmasked_positions
@@ -51,7 +56,6 @@ def visualize_output(model, test_image):
 
 
     test_decoder_outputs = model.decoder(test_decoder_inputs)
-    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION)
 
     # Show a maksed patch image.
     test_masked_patch, idx = patch_encoder.generate_masked_image(test_patches, test_unmask_indices)
@@ -61,17 +65,28 @@ def visualize_output(model, test_image):
     masked_image = patch_layer.reconstruct_from_patch(test_masked_patch)
 
     reconstructed_image = patch_layer.reconstruct_from_patch(test_decoder_outputs[idx,1:,:])
+    import numpy as np
+    masked_image = masked_image.numpy()
+    reconstructed_image = reconstructed_image.numpy()
+    reconstructed_image_with_known_patch = np.where(masked_image == 0, reconstructed_image, masked_image)
+
+    plt.imshow(reconstructed_image_with_known_patch)
+    plt.show()
+    # reconstructed_image_with_known_patch = np.where
     # reconstructed_image = test_decoder_outputs[idx]
 
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
-    ax[0].imshow(original_image)
-    ax[0].set_title(f"Original:")
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(15,15))
+    ax[0][0].imshow(original_image)
+    ax[0][0].set_title(f"Original:")
 
-    ax[1].imshow(masked_image)
-    ax[1].set_title(f"Masked:")
+    ax[0][1].imshow(masked_image)
+    ax[0][1].set_title(f"Masked:")
 
-    ax[2].imshow(reconstructed_image)
-    ax[2].set_title(f"Resonstructed:")
+    ax[1][0].imshow(reconstructed_image)
+    ax[1][0].set_title(f"Resonstructed:")
+
+    ax[1][1].imshow(reconstructed_image_with_known_patch)
+    ax[1][1].set_title(f"Resonstructed with Original Patches:")
 
     plt.show()
     plt.close()
@@ -84,7 +99,7 @@ with open("model_config.yml", "r", encoding="utf8") as f:
 
 if __name__ == '__main__':
     # Setting seeds for reproducibility.
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+
     SEED = 42
     tf.random.set_seed(SEED)
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -135,6 +150,13 @@ if __name__ == '__main__':
         DEC_PROJECTION_DIM * DEC_MLP_RATIO,
         DEC_PROJECTION_DIM
     ]
+
+
+    def mse(y_true, y_pred):
+        squared_error = K.square(y_true - y_pred)
+        masked_mse = K.sum(K.mean(K.mean(squared_error, axis=2), axis=1))
+        return masked_mse
+
     if training == 'train':
         wandb_config(epochs=EPOCHS, model_name='mae4eo', batch_size=BATCH_SIZE, learning_rate=LEARNING_RATE)
     imagenet = ImagenetLoader(dataset=dataset)
@@ -143,7 +165,7 @@ if __name__ == '__main__':
     with strategy.scope():
         patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
         patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM,
-                                     mask_proportion=MASK_PROPORTION, patch_division=patch_layer)
+                                     mask_proportion=MASK_PROPORTION, patch_division=patch_layer, num_patches=NUM_PATCHES)
         encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS,
                                  encoder_projection_dim=ENC_PROJECTION_DIM,
                                  encoder_transformer_units=ENC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
@@ -168,7 +190,7 @@ if __name__ == '__main__':
             warmup_learning_rate=0.0,
             warmup_steps=warmup_steps,
         )
-        optimizer = tfa.optimizers.AdamW(learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+        optimizer = tfa.optimizers.AdamW(learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY, beta_1=0.9, beta_2=0.95)
     mae_model.encoder.summary()
     mae_model.decoder.summary()
     mae_model.summary()
@@ -194,7 +216,7 @@ if __name__ == '__main__':
     else:
         mae_model.load_weights(model_path)
 
-    loss, mae = mae_model.evaluate(test_gen, steps=imagenet.len_test/BATCH_SIZE)
-    print(f"Loss: {loss:.2f}")
-    print(f"MAE: {mae:.2f}")
-    visualize_output(mae_model, next(iter(test_gen)))
+    # loss, mae = mae_model.evaluate(test_gen, steps=imagenet.len_test/BATCH_SIZE)
+    # print(f"Loss: {loss:.2f}")
+    # print(f"MAE: {mae:.2f}")
+    visualize_output(mae_model, next(iter(test_gen)), patch_encoder)

@@ -7,6 +7,7 @@ import tensorflow as tf
 
 from image_patch_division import ImagePatchDivision
 from patch_encoder import PatchEncoder
+from pos_embed import get_2d_sincos_pos_embed
 from utils import ImagenetLoader
 
 
@@ -24,6 +25,7 @@ class MaskedAutoencoder(tf.keras.Model):
         self.patch_encoder = patch_encoder
         self.encoder = encoder
         self.decoder = decoder
+
 
     def calculate_loss(self, images, test=False):
         # Patch the augmented images.
@@ -161,8 +163,12 @@ def create_encoder(num_heads, num_layers, encoder_projection_dim, encoder_transf
 def create_decoder(num_pathces, num_layers, num_heads, image_size, patch_size, encoder_projection_dim, decoder_projection_dim,
                    decoder_transformer_units, layer_norm_eps):
 
+    pos_embed = get_2d_sincos_pos_embed(decoder_projection_dim, int(num_pathces ** .5), cls_token=True)
+    dec_position_embedding = tf.convert_to_tensor(pos_embed, dtype=tf.float32)
+
     inputs = layers.Input((num_pathces+1, encoder_projection_dim))
     x = layers.Dense(decoder_projection_dim)(inputs)
+    x = x + dec_position_embedding
     for _ in range(num_layers):
         # Layer normalization 1.
         x1 = layers.LayerNormalization(epsilon=layer_norm_eps)(x)
@@ -208,7 +214,7 @@ if __name__=='__main__':
     IMAGE_SIZE, \
     PATCH_SIZE,\
     LEARNING_RATE = dataset_config.get(dataset).values()
-    INPUT_SHAPE = (None, IMG_SHAPE, IMG_SHAPE, N_CHANNELS)
+    INPUT_SHAPE = (None, IMAGE_SIZE, IMAGE_SIZE, N_CHANNELS)
     NUM_PATCHES = (IMAGE_SIZE // PATCH_SIZE) ** 2
     MASK_PROPORTION = 0.75
 
@@ -235,7 +241,7 @@ if __name__=='__main__':
         DEC_PROJECTION_DIM
     ]
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
-    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION, patch_division=patch_layer)
+    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM, mask_proportion=MASK_PROPORTION, patch_division=patch_layer, num_patches=NUM_PATCHES)
     encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS, encoder_projection_dim=ENC_PROJECTION_DIM,
                              encoder_transformer_units=ENC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
 

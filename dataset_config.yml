@@ -1,12 +1,12 @@
 cifar10:
   buffer_size: 1024
   batch_size: 256
-  img_shape: 48
+  img_shape: 32
   num_classes: 10
   n_channel: 3
   aug_img_size: 48
   patch_size: 6
-  learning_rate: 0.005
+  learning_rate: 0.001
 
 imagenet:
   buffer_size: 1024
