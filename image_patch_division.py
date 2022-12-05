@@ -54,7 +54,7 @@ class ImagePatchDivision(layers.Layer):
         return reconstructed
 
 if __name__=='__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    # os.environ["CUDA_VISIBLE_DEVICES"] = ""
     PATCH_SIZE = 6
     imagenet = ImagenetLoader(dataset='cifar')
     image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='cifar', batch_size=256, augment=True)

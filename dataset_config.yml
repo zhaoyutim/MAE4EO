@@ -16,4 +16,4 @@ imagenet:
   n_channel: 3
   aug_img_size: 224
   patch_size: 16
-  learning_rate: 0.00015
+  learning_rate: 0.0015

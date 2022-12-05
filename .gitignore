@@ -5,3 +5,5 @@ mae4eo
 venv
 wandb
 ._.DS_Store
+mae4eo_checkpoints
+checkpoints_image

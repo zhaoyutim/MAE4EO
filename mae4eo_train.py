@@ -1,11 +1,16 @@
 import argparse
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+import numpy as np
+import requests
+
+
 import platform
 
 import yaml
 from matplotlib import pyplot as plt
 from tensorflow.python.keras.callbacks import ModelCheckpoint
-
+from PIL import Image
 import wandb as wandb
 import tensorflow_addons as tfa
 import tensorflow as tf
@@ -22,8 +27,7 @@ import tensorflow.python.keras.backend as K
 #
 # policy = mixed_precision.Policy('mixed_float16')
 # mixed_precision.set_global_policy(policy)
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+
 def wandb_config(epochs, model_name, batch_size, learning_rate):
     wandb.login()
     wandb.init(project='mae4eo', entity="zhaoyutim")
@@ -34,21 +38,25 @@ def wandb_config(epochs, model_name, batch_size, learning_rate):
       "batch_size": batch_size,
       "model_name":model_name,
     }
-def visualize_output(model, test_image, patch_encoder):
+def visualize_output(model, test_image, patch_encoder, epoch):
+    test_image = model.random_resize_and_crop_test(test_image)
+    test_image = model.input_norm(test_image)
     test_patches = model.patch_layer(test_image)
 
     (   test_unmasked_embeddings,
-        test_masked_embeddings,
+        test_masked_tokens,
         test_unmasked_positions,
         test_mask_indices,
         test_unmask_indices,
         test_mask_restore
     ) = model.patch_encoder(test_image)
 
-    test_encoder_outputs = model.encoder(test_unmasked_embeddings)
-    test_encoder_outputs = test_encoder_outputs + test_unmasked_positions
 
-    test_decoder_inputs = tf.concat([test_encoder_outputs, test_masked_embeddings], axis=1)
+    test_encoder_outputs = model.encoder(test_unmasked_embeddings)
+    # test_encoder_outputs = test_encoder_outputs + test_unmasked_positions
+
+    test_encoder_outputs = model.encoder_decoder_projection(test_encoder_outputs)
+    test_decoder_inputs = tf.concat([test_encoder_outputs, test_masked_tokens], axis=1)
 
     cls_token = test_decoder_inputs[:, :1, :]
     test_decoder_inputs = tf.gather(test_decoder_inputs[:, 1:, :], test_mask_restore, axis=1, batch_dims=1)
@@ -60,34 +68,35 @@ def visualize_output(model, test_image, patch_encoder):
     # Show a maksed patch image.
     test_masked_patch, idx = patch_encoder.generate_masked_image(test_patches, test_unmask_indices)
     print(f"\nIdx chosen: {idx}")
-    original_image = test_image[idx]
+    import numpy as np
+    image_mean = np.array([0.485, 0.456, 0.406])
+    image_std = np.array([0.229, 0.224, 0.225])
+    original_image = test_image[idx]*image_std+image_mean
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
     masked_image = patch_layer.reconstruct_from_patch(test_masked_patch)
 
     reconstructed_image = patch_layer.reconstruct_from_patch(test_decoder_outputs[idx,1:,:])
-    import numpy as np
-    masked_image = masked_image.numpy()
-    reconstructed_image = reconstructed_image.numpy()
+
+    masked_image = np.where(masked_image == 0, 0, masked_image.numpy()*image_std+image_mean)
+    reconstructed_image = reconstructed_image.numpy()*image_std+image_mean
     reconstructed_image_with_known_patch = np.where(masked_image == 0, reconstructed_image, masked_image)
 
-    plt.imshow(reconstructed_image_with_known_patch)
-    plt.show()
     # reconstructed_image_with_known_patch = np.where
     # reconstructed_image = test_decoder_outputs[idx]
 
-    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(15,15))
-    ax[0][0].imshow(original_image)
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(12,12))
+    ax[0][0].imshow(np.clip(original_image,0,1))
     ax[0][0].set_title(f"Original:")
 
     ax[0][1].imshow(masked_image)
     ax[0][1].set_title(f"Masked:")
 
-    ax[1][0].imshow(reconstructed_image)
+    ax[1][0].imshow(np.clip(reconstructed_image,0,1))
     ax[1][0].set_title(f"Resonstructed:")
 
-    ax[1][1].imshow(reconstructed_image_with_known_patch)
+    ax[1][1].imshow(np.clip(reconstructed_image_with_known_patch,0,1))
     ax[1][1].set_title(f"Resonstructed with Original Patches:")
-
+    plt.savefig('checkpoints_image/output_at_epoch_'+str(epoch)+'.png')
     plt.show()
     plt.close()
 
@@ -97,9 +106,12 @@ with open("dataset_config.yml", "r", encoding="utf8") as f:
 with open("model_config.yml", "r", encoding="utf8") as f:
     model_config = yaml.load(f, Loader=yaml.FullLoader)
 
+
+
 if __name__ == '__main__':
     # Setting seeds for reproducibility.
-
+    # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "7"
     SEED = 42
     tf.random.set_seed(SEED)
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -108,6 +120,7 @@ if __name__ == '__main__':
     parser.add_argument('-epoch', type=int, help='training ephoches')
     parser.add_argument('-d', type=str, help='dataset')
     parser.add_argument('-m', type=str, help='model')
+
     args = parser.parse_args()
     mask_proportion = args.mp
     training = args.t
@@ -130,6 +143,7 @@ if __name__ == '__main__':
 
     # OPTIMIZER
     WEIGHT_DECAY = 1e-4
+    percent='20'
 
     # ENCODER and DECODER
     LAYER_NORM_EPS, \
@@ -151,7 +165,6 @@ if __name__ == '__main__':
         DEC_PROJECTION_DIM
     ]
 
-
     def mse(y_true, y_pred):
         squared_error = K.square(y_true - y_pred)
         masked_mse = K.sum(K.mean(K.mean(squared_error, axis=2), axis=1))
@@ -159,13 +172,13 @@ if __name__ == '__main__':
 
     if training == 'train':
         wandb_config(epochs=EPOCHS, model_name='mae4eo', batch_size=BATCH_SIZE, learning_rate=LEARNING_RATE)
-    imagenet = ImagenetLoader(dataset=dataset)
+    imagenet = ImagenetLoader(dataset=dataset, percent=percent)
     train_gen, val_gen, test_gen = imagenet.dataset_generator(dataset=dataset, batch_size=BATCH_SIZE, augment=True)
     strategy = tf.distribute.MirroredStrategy()
     with strategy.scope():
         patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
         patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, projection_dim=ENC_PROJECTION_DIM,
-                                     mask_proportion=MASK_PROPORTION, patch_division=patch_layer, num_patches=NUM_PATCHES)
+                                     mask_proportion=MASK_PROPORTION, patch_division=patch_layer, decoder_projection_dim =DEC_PROJECTION_DIM, num_patches=NUM_PATCHES)
         encoder = create_encoder(num_heads=ENC_NUM_HEADS, num_layers=ENC_LAYERS,
                                  encoder_projection_dim=ENC_PROJECTION_DIM,
                                  encoder_transformer_units=ENC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
@@ -175,6 +188,7 @@ if __name__ == '__main__':
                                  decoder_projection_dim=DEC_PROJECTION_DIM,
                                  decoder_transformer_units=DEC_TRANSFORMER_UNITS, layer_norm_eps=LAYER_NORM_EPS)
         mae_model = MaskedAutoencoder(
+            image_shape=(IMAGE_SIZE, IMAGE_SIZE),
             patch_layer=patch_layer,
             patch_encoder=patch_encoder,
             encoder=encoder,
@@ -201,7 +215,23 @@ if __name__ == '__main__':
     # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir='logs',
     #                                                  histogram_freq=1,
     #                                                  profile_batch='20, 40')
-    model_path='mae4eo/mae4eo_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model
+    model_path='mae4eo/mae4eo_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model+'_dataset_'+dataset + percent+'_percent'
+    checkpoint_path = 'mae4eo_checkpoints/mae4eo_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model+'_dataset_'+dataset + percent+'_percent'
+    checkpoint = ModelCheckpoint(
+        checkpoint_path,
+        monitor="val_loss", mode="min", save_best_only=True, verbose=1)
+
+
+    class TrainMonitor(tf.keras.callbacks.Callback):
+        def __init__(self, epoch_interval=None):
+            self.epoch_interval = epoch_interval
+
+        def on_epoch_end(self, epoch, logs=None):
+            if self.epoch_interval and epoch % self.epoch_interval == 0:
+                visualize_output(self.model, next(iter(test_gen)), self.model.patch_encoder, epoch)
+
+
+    train_callbacks = [TrainMonitor(epoch_interval=5)]
     if training == 'train':
         history = mae_model.fit(
             train_gen,
@@ -210,13 +240,39 @@ if __name__ == '__main__':
             validation_data=val_gen,
             validation_steps=int((imagenet.len_val/BATCH_SIZE)),
             steps_per_epoch=int((imagenet.len_train / BATCH_SIZE)),
-            callbacks=[WandbCallback(save_model=False)]
+            callbacks=[WandbCallback(save_model=False), checkpoint, train_callbacks]
         )
         mae_model.save(model_path)
     else:
-        mae_model.load_weights(model_path)
+        mae_model.load_weights(checkpoint_path)
+    # load an image
+    img_url = 'https://user-images.githubusercontent.com/11435359/147738734-196fd92f-9260-48d5-ba7e-bf103d29364d.jpg'  # fox, from ILSVRC2012_val_00046145
+    # img_url = 'https://user-images.githubusercontent.com/11435359/147743081-0428eecf-89e5-4e07-8da5-a30fd73cc0ba.jpg' # cucumber, from ILSVRC2012_val_00047851
+    img = Image.open(requests.get(img_url, stream=True).raw)
+    img = img.resize((224, 224))
+    img = np.array(img) / 255.
 
+    assert img.shape == (224, 224, 3)
+    imagenet_mean = np.array([0.485, 0.456, 0.406])
+    imagenet_std = np.array([0.229, 0.224, 0.225])
+    # normalize by ImageNet mean and std
+    # img = img - imagenet_mean
+    # img = img / imagenet_std
+
+    def show_image(image, title=''):
+        # image is [H, W, 3]
+        assert image.shape[2] == 3
+        plt.imshow(np.clip((image * imagenet_std + imagenet_mean) * 255, 0, 255).astype(int))
+        plt.title(title, fontsize=16)
+        plt.axis('off')
+        plt.show()
+        return
+
+    plt.rcParams['figure.figsize'] = [5, 5]
+    img_tensor = tf.convert_to_tensor(img[np.newaxis, :,:,:])
+    show_image(img)
     # loss, mae = mae_model.evaluate(test_gen, steps=imagenet.len_test/BATCH_SIZE)
     # print(f"Loss: {loss:.2f}")
     # print(f"MAE: {mae:.2f}")
-    visualize_output(mae_model, next(iter(test_gen)), patch_encoder)
+    # visualize_output(mae_model, next(iter(test_gen)), patch_encoder)
+    visualize_output(mae_model, img_tensor, patch_encoder, EPOCHS)

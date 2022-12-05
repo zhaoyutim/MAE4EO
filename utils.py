@@ -8,7 +8,7 @@ import tensorflow_datasets as tfds
 AUTOTUNE = tf.data.AUTOTUNE
 
 class ImagenetLoader:
-    def __init__(self,dataset,
+    def __init__(self,dataset, percent='20',
                  data_dir = '~/tensorflow_datasets/downloads/ilsvrc2012',
                  write_dir = '~/tensorflow_datasets/imagenet2012'):
         # Construct a tf.data.Dataset
@@ -23,7 +23,7 @@ class ImagenetLoader:
             }
             self.x_train, self.x_val, self.x_test = tfds.load('imagenet2012',
                                        data_dir=os.path.join(write_dir, 'data'),
-                                       split=['train', 'validation', 'test'],
+                                       split=['train[:'+percent+'%]', 'validation', 'test'],
                                         shuffle_files=True,
                                         download=True,
                                         as_supervised=True,
@@ -84,14 +84,14 @@ class ImagenetLoader:
 
     def training_augmentation_cifar(self, image):
         image = self.rescaling(image)
-        image = self.resizing_cifar_train(image)
-        image = self.random_crop_cifar(image)
-        image = tf.image.random_flip_left_right(image)
+        # image = self.resizing_cifar_train(image)
+        # image = self.random_crop_cifar(image)
+        # image = tf.image.random_flip_left_right(image)
         return image
 
     def test_augmentation_cifar(self, image):
         image = self.rescaling(image)
-        image = self.resizing_cifar_test(image)
+        # image = self.resizing_cifar_test(image)
         return image
 
     def dataset_generator(self, dataset, batch_size=32, augment=False):
@@ -103,7 +103,7 @@ class ImagenetLoader:
 
         train_dataset = train_dataset.shuffle(batch_size * 10).repeat()
         val_dataset = val_dataset.shuffle(batch_size * 10).repeat()
-        test_dataset = test_dataset.shuffle(batch_size)
+        test_dataset = test_dataset
         if dataset=='imagenet':
             train_dataset = train_dataset.map(self.training_augmentation, num_parallel_calls=tf.data.experimental.AUTOTUNE)
             val_dataset = val_dataset.map(self.training_augmentation, num_parallel_calls=tf.data.experimental.AUTOTUNE)

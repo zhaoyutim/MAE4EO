@@ -1,4 +1,4 @@
-vit_large:
+vit_base:
   layer_norm_eps: 1.0e-6
   # Encoder Config
   enc_projection_dim: 768

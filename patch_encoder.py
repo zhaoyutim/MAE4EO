@@ -1,5 +1,4 @@
 import os
-
 import numpy as np
 from matplotlib import pyplot as plt
 from tensorflow.keras import layers
@@ -16,6 +15,7 @@ class PatchEncoder(layers.Layer):
         patch_size,
         num_patches,
         projection_dim,
+        decoder_projection_dim,
         mask_proportion,
         patch_division,
         downstream=False,
@@ -24,15 +24,14 @@ class PatchEncoder(layers.Layer):
         super().__init__(**kwargs)
         self.patch_size = patch_size
         self.projection_dim = projection_dim
+        self.decoder_projection_dim = decoder_projection_dim
         self.mask_proportion = mask_proportion
         self.downstream = downstream
         self.patch_division = patch_division
-        self.cls_token = tf.Variable(tf.zeros((1, 1, self.projection_dim)))
+        self.cls_token = tf.Variable(tf.random.normal([1, 1, self.projection_dim], stddev=0.02), trainable=True)
         # This is a trainable mask token initialized randomly from a normal
         # distribution.
-        self.mask_token = tf.Variable(
-            tf.random.normal([1, patch_size * patch_size * 3]), trainable=True
-        )
+        self.mask_token = tf.Variable(tf.random.normal([1, self.decoder_projection_dim], stddev=0.02), trainable=True)
         self.projection_cnn = layers.Conv2D(filters=self.projection_dim, kernel_size=patch_size, strides=patch_size)
         pos_embed = get_2d_sincos_pos_embed(projection_dim, int(num_patches ** .5), cls_token=True)
         self.position_embedding = tf.convert_to_tensor(pos_embed, dtype=tf.float32)
@@ -42,7 +41,7 @@ class PatchEncoder(layers.Layer):
 
         self.num_patches = (input_shape[1]//self.patch_size) ** 2
         # Create the projection layer for the patches.
-        self.projection = layers.Dense(units=self.projection_dim)
+        # self.projection = layers.Dense(units=self.projection_dim)
 
         # Create the positional embedding layer.
         # self.position_embedding = layers.Embedding(
@@ -58,9 +57,8 @@ class PatchEncoder(layers.Layer):
         batch_size = tf.shape(images)[0]
 
         # positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
-        pos_embeddings = self.position_embedding
         pos_embeddings = tf.tile(
-            pos_embeddings[tf.newaxis], [batch_size, 1, 1]
+            self.position_embedding[tf.newaxis], [batch_size, 1, 1]
         )  # (B, num_patches, projection_dim)
 
         # Embed the patches.
@@ -98,10 +96,10 @@ class PatchEncoder(layers.Layer):
             )
 
             # Get the masked embeddings for the tokens.
-            masked_embeddings = self.projection(mask_tokens) + masked_positions
+            # masked_embeddings = mask_tokens + masked_positions
             return (
                 unmasked_embeddings,  # Input to the encoder.
-                masked_embeddings,  # First part of input to the decoder.
+                mask_tokens,  # First part of input to the decoder.
                 unmasked_positions,  # Added to the encoder outputs.
                 mask_indices,  # The indices that were masked.
                 unmask_indices,  # The indices that were unmaksed.
@@ -115,13 +113,14 @@ class PatchEncoder(layers.Layer):
             tf.random.uniform(shape=(batch_size, self.num_patches)), axis=-1
         )
         mask_restore = tf.argsort(rand_indices, axis=-1)
-        mask_indices = rand_indices[:, : self.num_mask]
-        unmask_indices = rand_indices[:, self.num_mask :]
+        unmask_indices = rand_indices[:, : self.num_patches-self.num_mask]
+        mask_indices = rand_indices[:, self.num_patches-self.num_mask :]
         return mask_indices, unmask_indices, mask_restore
 
     def generate_masked_image(self, patches, unmask_indices):
         # Choose a random patch and it corresponding unmask index.
-        idx = np.random.choice(patches.shape[0])
+        # idx = np.random.choice(patches.shape[0])
+        idx = 0
         patch = patches[idx]
         unmask_index = unmask_indices[idx]
 
@@ -135,14 +134,13 @@ class PatchEncoder(layers.Layer):
         return new_patch, idx
 
 if __name__=='__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    PATCH_SIZE = 6
-    imagenet = ImagenetLoader(dataset='cifar')
-    image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='cifar', batch_size=256, augment=True)
+    PATCH_SIZE = 16
+    imagenet = ImagenetLoader(dataset='imagenet')
+    image_gen, val_gen, test_gen = imagenet.dataset_generator(dataset='imagenet', batch_size=256, augment=True)
     image_batch = next(iter(image_gen)).numpy()
     patch_layer = ImagePatchDivision(patch_size=PATCH_SIZE)
     patches = patch_layer(images=image_batch)
-    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, num_patches=64, projection_dim=128, mask_proportion=0.75, patch_division=patch_layer)
+    patch_encoder = PatchEncoder(patch_size=PATCH_SIZE, num_patches=196, projection_dim=768, decoder_projection_dim=512, mask_proportion=0.75, patch_division=patch_layer)
     (unmasked_embeddings,masked_embeddings,unmasked_positions,mask_indices,unmask_indices,mask_restore) = patch_encoder(images=image_batch)
 
     # Show a maksed patch image.
@@ -150,16 +148,17 @@ if __name__=='__main__':
     # patch_restore = tf.gather(tf.concat([unmasked_embeddings, masked_embeddings], 1), mask_restore, axis=1,
     #                           batch_dims=1)
     plt.figure(figsize=(10, 10))
-    plt.subplot(1, 3, 1)
+    plt.subplot(1, 2, 1)
     img = patch_layer.reconstruct_from_patch(new_patch)
     plt.imshow(tf.keras.utils.array_to_img(img))
     plt.axis("off")
     plt.title("Masked")
-    plt.subplot(1, 3, 2)
+    plt.subplot(1, 2, 2)
     img = image_batch[random_index]
     plt.imshow(tf.keras.utils.array_to_img(img))
     plt.axis("off")
     plt.title("Original")
+    plt.show()
 
     # plt.subplot(1,3,3)
     # img = patch_layer.reconstruct_from_patch(patch_restore[0, :, :])
