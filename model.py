@@ -1,4 +1,5 @@
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "9, 10"
 import yaml
 from tensorflow.keras import layers
 import tensorflow_addons as tfa
@@ -111,17 +112,14 @@ class MaskedAutoencoder(tf.keras.Model):
             mask_restore
         ) = self.patch_encoder(images)
 
-        # Pass the unmaksed patche to the encoder.
-        encoder_outputs = self.encoder(unmasked_embeddings)
+        # all masked_token
+        cls_token = unmasked_embeddings[:, :1, :]
+        encoder_inputs = tf.concat([unmasked_embeddings[:, 1:, :], masked_tokens], axis=1)
+        encoder_inputs = tf.gather(encoder_inputs, mask_restore, axis=1, batch_dims=1)
+        encoder_inputs = tf.concat([cls_token, encoder_inputs], axis=1)
 
-        # Create the decoder inputs.
-        # encoder_outputs = encoder_outputs + unmasked_positions
+        encoder_outputs = self.encoder(encoder_inputs)
         decoder_inputs = self.encoder_decoder_projection(encoder_outputs)
-        decoder_inputs = tf.concat([decoder_inputs, masked_tokens], axis=1)
-
-        cls_token = decoder_inputs[:, :1, :]
-        decoder_inputs = tf.gather(decoder_inputs[:, 1:, :], mask_restore, axis=1, batch_dims=1)
-        decoder_inputs = tf.concat([cls_token, decoder_inputs], axis=1)
 
         # Decode the inputs.
         decoder_outputs = self.decoder(decoder_inputs)
@@ -174,25 +172,26 @@ class MaskedAutoencoder(tf.keras.Model):
         # Encode the patches.
         (
             unmasked_embeddings,
-            masked_token,
+            masked_tokens,
             unmasked_positions,
             mask_indices,
             unmask_indices,
             mask_restore,
         ) = self.patch_encoder(inputs)
 
-        # Pass the unmaksed patche to the encoder.
-        encoder_outputs = self.encoder(unmasked_embeddings)
+        # classic implementation
+        # encoder_outputs = self.encoder(unmasked_embeddings)
+        # decoder_inputs = self.encoder_decoder_projection(encoder_outputs)
+        # decoder_inputs = tf.concat([decoder_inputs, masked_token], axis=1)
 
-        # Create the decoder inputs.
-        # encoder_outputs = encoder_outputs + unmasked_positions
+        # all masked_token
+        cls_token = unmasked_embeddings[:, :1, :]
+        encoder_inputs = tf.concat([unmasked_embeddings[:, 1:, :], masked_tokens], axis=1)
+        encoder_inputs = tf.gather(encoder_inputs, mask_restore, axis=1, batch_dims=1)
+        encoder_inputs = tf.concat([cls_token, encoder_inputs], axis=1)
+
+        encoder_outputs = self.encoder(encoder_inputs)
         decoder_inputs = self.encoder_decoder_projection(encoder_outputs)
-        decoder_inputs = tf.concat([decoder_inputs, masked_token], axis=1)
-
-        cls_token = decoder_inputs[:, :1, :]
-        decoder_inputs = tf.gather(decoder_inputs[:, 1:, :], mask_restore, axis=1, batch_dims=1)
-        decoder_inputs = tf.concat([cls_token, decoder_inputs], axis=1)
-
         # Decode the inputs.
         decoder_outputs = self.decoder(decoder_inputs)
 
@@ -279,7 +278,7 @@ if __name__=='__main__':
 
     with open("model_config.yml", "r", encoding="utf8") as f:
         model_config = yaml.load(f, Loader=yaml.FullLoader)
-    dataset='imagenet'
+    dataset='cifar10'
     BUFFER_SIZE, \
     BATCH_SIZE, \
     IMG_SHAPE, \
@@ -304,7 +303,7 @@ if __name__=='__main__':
     DEC_PROJECTION_DIM, \
     DEC_NUM_HEADS, \
     DEC_LAYERS,\
-    DEC_MLP_RATIO = model_config.get('vit_base').values()
+    DEC_MLP_RATIO = model_config.get('vit').values()
 
     ENC_TRANSFORMER_UNITS = [
         ENC_PROJECTION_DIM * ENC_MLP_RATIO,

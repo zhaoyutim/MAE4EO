@@ -10,7 +10,7 @@ cifar10:
 
 imagenet:
   buffer_size: 1024
-  batch_size: 256
+  batch_size: 128
   img_shape: 224
   num_classes: 1000
   n_channel: 3

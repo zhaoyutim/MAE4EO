@@ -31,7 +31,7 @@ class PatchEncoder(layers.Layer):
         self.cls_token = tf.Variable(tf.random.normal([1, 1, self.projection_dim], stddev=0.02), trainable=True)
         # This is a trainable mask token initialized randomly from a normal
         # distribution.
-        self.mask_token = tf.Variable(tf.random.normal([1, self.decoder_projection_dim], stddev=0.02), trainable=True)
+        self.mask_token = tf.Variable(tf.random.normal([1, self.projection_dim], stddev=0.02), trainable=True)
         self.projection_cnn = layers.Conv2D(filters=self.projection_dim, kernel_size=patch_size, strides=patch_size)
         pos_embed = get_2d_sincos_pos_embed(projection_dim, int(num_patches ** .5), cls_token=True)
         self.position_embedding = tf.convert_to_tensor(pos_embed, dtype=tf.float32)

@@ -1,6 +1,6 @@
 import argparse
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# os.environ["CUDA_VISIBLE_DEVICES"] = "9"
 import numpy as np
 import requests
 
@@ -51,16 +51,14 @@ def visualize_output(model, test_image, patch_encoder, epoch):
         test_mask_restore
     ) = model.patch_encoder(test_image)
 
+    # all masked_token
+    cls_token = test_unmasked_embeddings[:, :1, :]
+    encoder_inputs = tf.concat([test_unmasked_embeddings[:, 1:, :], test_masked_tokens], axis=1)
+    encoder_inputs = tf.gather(encoder_inputs, test_mask_restore, axis=1, batch_dims=1)
+    encoder_inputs = tf.concat([cls_token, encoder_inputs], axis=1)
 
-    test_encoder_outputs = model.encoder(test_unmasked_embeddings)
-    # test_encoder_outputs = test_encoder_outputs + test_unmasked_positions
-
-    test_encoder_outputs = model.encoder_decoder_projection(test_encoder_outputs)
-    test_decoder_inputs = tf.concat([test_encoder_outputs, test_masked_tokens], axis=1)
-
-    cls_token = test_decoder_inputs[:, :1, :]
-    test_decoder_inputs = tf.gather(test_decoder_inputs[:, 1:, :], test_mask_restore, axis=1, batch_dims=1)
-    test_decoder_inputs = tf.concat([cls_token, test_decoder_inputs], axis=1)
+    encoder_outputs = model.encoder(encoder_inputs)
+    test_decoder_inputs = model.encoder_decoder_projection(encoder_outputs)
 
 
     test_decoder_outputs = model.decoder(test_decoder_inputs)
@@ -96,7 +94,7 @@ def visualize_output(model, test_image, patch_encoder, epoch):
 
     ax[1][1].imshow(np.clip(reconstructed_image_with_known_patch,0,1))
     ax[1][1].set_title(f"Resonstructed with Original Patches:")
-    plt.savefig('checkpoints_image/output_at_epoch_'+str(epoch)+'.png')
+    # plt.savefig('checkpoints_image/output_at_epoch_'+str(epoch)+'.png')
     plt.show()
     plt.close()
 
@@ -143,7 +141,7 @@ if __name__ == '__main__':
 
     # OPTIMIZER
     WEIGHT_DECAY = 1e-4
-    percent='20'
+    percent='100'
 
     # ENCODER and DECODER
     LAYER_NORM_EPS, \
@@ -215,8 +213,8 @@ if __name__ == '__main__':
     # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir='logs',
     #                                                  histogram_freq=1,
     #                                                  profile_batch='20, 40')
-    model_path='mae4eo/mae4eo_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model+'_dataset_'+dataset + percent+'_percent'
-    checkpoint_path = 'mae4eo_checkpoints/mae4eo_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model+'_dataset_'+dataset + percent+'_percent'
+    model_path='mae4eo/mae4eowf_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model+'_dataset_'+dataset + percent+'_percent'
+    checkpoint_path = 'mae4eo_checkpoints/mae4eowf_batchsize' + str(BATCH_SIZE) + '_lr_' + str(LEARNING_RATE) + '_mask_' + str(mask_proportion)+'_model_'+model+'_dataset_'+dataset + percent+'_percent'
     checkpoint = ModelCheckpoint(
         checkpoint_path,
         monitor="val_loss", mode="min", save_best_only=True, verbose=1)
